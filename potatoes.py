@@ -76,14 +76,20 @@ def obliterateIFrames(infile, outfile=None, remove_index=False, fix_index=False)
         chunk_data = data[pos+8:pos+8+size]
 
         if chunk_id.endswith(b'dc') or chunk_id.endswith(b'db'):
-            if chunk_data.startswith(b'\x00\x00\x01\xb6'):
-                # The MPEG-4 start code is followed by a VOP header. The first
-                # two bits of the fifth byte encode the frame type:
-                #   00 = I-VOP (intra frame)
-                #   01 = P-VOP
-                #   10 = B-VOP
-                #   11 = S-VOP (sprite)
-                frame_type = (chunk_data[4] >> 6) & 0b11
+            if chunk_data.find(b'\x00\x00\x01\xb6') != -1:
+                vop_index = chunk_data.find(b'\x00\x00\x01\xb6') + 4
+                if len(chunk_data) > vop_index:
+                    frame_type = (chunk_data[vop_index] >> 6) & 0b11
+                # The MPEG-4 start code is followed by a VOP header. The first two bits of the fifth byte encode the frame type:
+                # - 00 = I-VOP (intra frame) << want to remove these! 
+                # - 01 = P-VOP
+                # - 10 = B-VOP
+                # - 11 = S-VOP (sprite)
+                # 0b11 & 0b11 =  
+                # 0b00 & 0b11
+                frame_type = (chunk_data[5] >> 6) & 0b11
+                print(f"pos {pos}: frame_type {frame_type} — {['I','P','B','S'][frame_type]}-VOP")
+                print(f"Frame type bits: {bin(chunk_data[5] >> 6)} at pos {pos}")
                 if frame_type == 0:
                     # Detected an I-frame
                     if iframes_seen == 0:
@@ -111,6 +117,9 @@ def obliterateIFrames(infile, outfile=None, remove_index=False, fix_index=False)
             new_data.extend(data[pos:])
     else:
         new_data.extend(data[pos:])
+
+    with open(outfile, "wb") as f:
+        f.write(new_data)
 
     if fix_index:
         outfile = rebuildIndex(outfile)
@@ -148,13 +157,13 @@ if __name__ == "__main__":
         preview_clip = sliceClip(infile, start=0, duration=25, outfile="preview_clip.mp4", res=res)
         avi_file = convertToAVI(preview_clip, outfile="preview_clip_xvid.avi", res=res)
         #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
-        flickerglitch_file = removeIFrames(avi_file)
+        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
         play(flickerglitch_file)
         print("preview complete! run script again to get full version")
     else:
         res = askDownscale()
         avi_file = convertToAVI(infile, res=res)
         #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
-        flickerglitch_file = removeIFrames(avi_file, remove_index=True, fix_index=True)
+        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
         play(flickerglitch_file)
         print("oh ma god what have i done (do it again)")
