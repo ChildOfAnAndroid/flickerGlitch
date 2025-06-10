@@ -52,7 +52,7 @@ def removeIFrames(infile):
     print("success! data corrupted :)")
     return outfile
 
-def obliterateIFrames(infile, outfile=None, remove_index=False):
+def obliterateIFrames(infile, outfile=None, remove_index=False, fix_index=False):
     if not outfile:
         outfile = infile.rsplit('.', 1)[0] + '_flickerglitch.avi'
     print(f"obliterating I-frames (except the first one)... {outfile}")
@@ -107,9 +107,19 @@ def obliterateIFrames(infile, outfile=None, remove_index=False):
     else:
         new_data.extend(data[pos:])
 
-    with open(outfile, "wb") as f:
-        f.write(new_data)
-    print(f"success! keyframes gone (except first one): {outfile}")
+    if fix_index:
+        outfile = rebuildIndex(outfile)
+    return outfile
+
+def rebuildIndex(infile, outfile=None):
+    """Remux ``infile`` with ffmpeg to generate a new index chunk."""
+    if not outfile:
+        outfile = infile.rsplit('.', 1)[0] + '_fixed.avi'
+    print(f"remuxing to rebuild AVI index... {outfile}")
+    subprocess.run([
+        'ffmpeg', '-i', infile, '-c', 'copy', '-map', '0',
+        '-fflags', '+genpts', outfile
+    ], check=True)
     return outfile
 
 def play(outfile):
@@ -132,12 +142,12 @@ if __name__ == "__main__":
         res = askDownscale()
         preview_clip = sliceClip(infile, start=0, duration=25, outfile="preview_clip.mp4", res=res)
         avi_file = convertToAVI(preview_clip, outfile="preview_clip_xvid.avi", res=res)
-        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True)
+        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
         play(flickerglitch_file)
         print("preview complete! run script again to get full version")
     else:
         res = askDownscale()
         avi_file = convertToAVI(infile, res=res)
-        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True)
+        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
         play(flickerglitch_file)
         print("oh ma god what have i done (do it again)")
