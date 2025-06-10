@@ -46,8 +46,13 @@ def convertToAVI(infile, outfile=None, qscale=3, r=50, res=None):
 def removeIFrames(infile):
     outfile = infile.rsplit('.', 1)[0] + '_flickerglitch.avi'
     print(f"deliberately destroying your file... removing i-frames (keyframes)... {outfile}")
-    # re-encode but only copy P/B-frames (flickerglitch style)
-    cmd = ['ffmpeg', '-i', infile, '-vf', 'mpdecimate', '-c:v', 'libxvid', '-qscale:v', '3', '-an', outfile]
+    vf = "select='not(eq(pict_type\\,I))',setpts=N/FRAME_RATE/TB"
+    cmd = [
+        'ffmpeg', '-y', '-i', infile,
+        '-vf', vf,
+        '-c:v', 'libxvid', '-qscale:v', '3',
+        '-an', outfile
+    ]
     subprocess.run(cmd, check=True)
     print("success! data corrupted :)")
     return outfile
@@ -142,12 +147,14 @@ if __name__ == "__main__":
         res = askDownscale()
         preview_clip = sliceClip(infile, start=0, duration=25, outfile="preview_clip.mp4", res=res)
         avi_file = convertToAVI(preview_clip, outfile="preview_clip_xvid.avi", res=res)
-        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
+        #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
+        flickerglitch_file = removeIFrames(avi_file)
         play(flickerglitch_file)
         print("preview complete! run script again to get full version")
     else:
         res = askDownscale()
         avi_file = convertToAVI(infile, res=res)
-        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
+        #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
+        flickerglitch_file = removeIFrames(avi_file, remove_index=True, fix_index=True)
         play(flickerglitch_file)
         print("oh ma god what have i done (do it again)")
