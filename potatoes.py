@@ -52,7 +52,7 @@ def removeIFrames(infile):
     print("success! data corrupted :)")
     return outfile
 
-def obliterateIFrames(infile, outfile=None):
+def obliterateIFrames(infile, outfile=None, remove_index=False):
     if not outfile:
         outfile = infile.rsplit('.', 1)[0] + '_flickerglitch.avi'
     print(f"obliterating I-frames (except the first one)... {outfile}")
@@ -72,10 +72,17 @@ def obliterateIFrames(infile, outfile=None):
 
         if chunk_id.endswith(b'dc') or chunk_id.endswith(b'db'):
             if chunk_data.startswith(b'\x00\x00\x01\xb6'):
+                # The MPEG-4 start code is followed by a VOP header. The first
+                # two bits of the fifth byte encode the frame type:
+                #   00 = I-VOP (intra frame)
+                #   01 = P-VOP
+                #   10 = B-VOP
+                #   11 = S-VOP (sprite)
                 frame_type = (chunk_data[4] >> 6) & 0b11
                 if frame_type == 0:
+                    # Detected an I-frame
                     if iframes_seen == 0:
-                        # Keep the first I-frame!
+                        # Keep the very first I-frame so the AVI remains decodable.
                         iframes_seen += 1
                     else:
                         print(f"skipping I-frame at {pos}")
@@ -90,13 +97,18 @@ def obliterateIFrames(infile, outfile=None):
         if size % 2 == 1:
             pos += 1
 
-    new_data.extend(data[pos:])
-    tmp_out = outfile + ".tmp"
-    with open(tmp_out, "wb") as f:
+    if remove_index:
+        idx_pos = data.find(b"idx1", pos)
+        if idx_pos != -1:
+            print("removing AVI index chunk for extra chaos")
+            new_data.extend(data[pos:idx_pos])
+        else:
+            new_data.extend(data[pos:])
+    else:
+        new_data.extend(data[pos:])
+
+    with open(outfile, "wb") as f:
         f.write(new_data)
-    # remux to rebuild the AVI index so players don't show a single frame
-    subprocess.run(["ffmpeg", "-y", "-i", tmp_out, "-c", "copy", outfile], check=True)
-    os.remove(tmp_out)
     print(f"success! keyframes gone (except first one): {outfile}")
     return outfile
 
@@ -120,12 +132,12 @@ if __name__ == "__main__":
         res = askDownscale()
         preview_clip = sliceClip(infile, start=0, duration=25, outfile="preview_clip.mp4", res=res)
         avi_file = convertToAVI(preview_clip, outfile="preview_clip_xvid.avi", res=res)
-        flickerglitch_file = obliterateIFrames(avi_file)
+        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True)
         play(flickerglitch_file)
         print("preview complete! run script again to get full version")
     else:
         res = askDownscale()
         avi_file = convertToAVI(infile, res=res)
-        flickerglitch_file = obliterateIFrames(avi_file)
+        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True)
         play(flickerglitch_file)
         print("oh ma god what have i done (do it again)")
