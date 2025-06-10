@@ -4,6 +4,7 @@ import os
 import struct
 import sys
 import shutil
+previewDuration = 2500
 
 def pickFile():
     inFile = input("enter video file path (mp4/mkv/mov/avi): ").strip()
@@ -22,7 +23,7 @@ def askDownscale():
         return None
     return res
 
-def sliceClip(infile, start=0, duration=25, outfile="preview_clip.mp4", res=None):
+def sliceClip(infile, start=0, duration=previewDuration, outfile="preview_clip.mp4", res=None):
     print(f"making preview ({duration}s) from {infile}...")
     stream = ffmpeg.input(infile, ss=start, t=duration)
     if res:
@@ -33,7 +34,7 @@ def sliceClip(infile, start=0, duration=25, outfile="preview_clip.mp4", res=None
     print(f"preview saved as {outfile}!")
     return outfile
 
-def convertToAVI(infile, outfile=None, qscale=3, r=50, res=None):
+def convertToAVI(infile, outfile="avi.mp4", qscale=3, r=50, res=None):
     if not outfile: outfile = infile.rsplit('.', 1)[0] + '_xvid.avi'
     print(f"wololo... converting to Xvid AVI... {outfile}")
     cmd = ["ffmpeg", "-y", "-i", infile, "-c:v", "libxvid", "-qscale:v", str(qscale), "-an", "-r", str(r)]
@@ -58,7 +59,7 @@ def removeIFrames(infile):
     return outfile
 
 def obliterateIFrames(infile, outfile=None, remove_index=False, fix_index=False):
-    if not outfile:
+    if not outfile or outfile is None:
         outfile = infile.rsplit('.', 1)[0] + '_flickerglitch.avi'
     print(f"obliterating I-frames (except the first one)... {outfile}")
     with open(infile, "rb") as f:
@@ -87,7 +88,6 @@ def obliterateIFrames(infile, outfile=None, remove_index=False, fix_index=False)
                 # - 11 = S-VOP (sprite)
                 # 0b11 & 0b11 =  
                 # 0b00 & 0b11
-                frame_type = (chunk_data[5] >> 6) & 0b11
                 print(f"pos {pos}: frame_type {frame_type} — {['I','P','B','S'][frame_type]}-VOP")
                 print(f"Frame type bits: {bin(chunk_data[5] >> 6)} at pos {pos}")
                 if frame_type == 0:
@@ -127,7 +127,7 @@ def obliterateIFrames(infile, outfile=None, remove_index=False, fix_index=False)
 
 def rebuildIndex(infile, outfile=None):
     """Remux ``infile`` with ffmpeg to generate a new index chunk."""
-    if not outfile:
+    if not outfile or outfile is None:
         outfile = infile.rsplit('.', 1)[0] + '_fixed.avi'
     print(f"remuxing to rebuild AVI index... {outfile}")
     subprocess.run([
@@ -139,7 +139,7 @@ def rebuildIndex(infile, outfile=None):
 def play(outfile):
     print("opening chaos... ")
     if sys.platform == "darwin":
-        subprocess.Popen(["open", outfile])
+        subprocess.Popen(["vlc", outfile])
     elif os.name == "nt":
         os.startfile(outfile)
     else:
@@ -154,7 +154,7 @@ if __name__ == "__main__":
     # Preview mode
     if askPreview():
         res = askDownscale()
-        preview_clip = sliceClip(infile, start=0, duration=25, outfile="preview_clip.mp4", res=res)
+        preview_clip = sliceClip(infile, start=0, duration=previewDuration, outfile="preview_clip.mp4", res=res)
         avi_file = convertToAVI(preview_clip, outfile="preview_clip_xvid.avi", res=res)
         #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
         flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
