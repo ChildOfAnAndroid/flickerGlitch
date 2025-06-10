@@ -2,6 +2,8 @@ import ffmpeg
 import subprocess
 import os
 import struct
+import sys
+import shutil
 
 def pickFile():
     inFile = input("enter video file path (mp4/mkv/mov/avi): ").strip()
@@ -34,7 +36,7 @@ def sliceClip(infile, start=0, duration=25, outfile="preview_clip.mp4", res=None
 def convertToAVI(infile, outfile=None, qscale=3, r=50, res=None):
     if not outfile: outfile = infile.rsplit('.', 1)[0] + '_xvid.avi'
     print(f"wololo... converting to Xvid AVI... {outfile}")
-    cmd = ["ffmpeg", "-i", infile, "-c:v", "libxvid", "-qscale:v", str(qscale), "-an", "-r", str(r)]
+    cmd = ["ffmpeg", "-y", "-i", infile, "-c:v", "libxvid", "-qscale:v", str(qscale), "-an", "-r", str(r)]
     if res: cmd.extend(["-s", res])
     cmd.append(outfile)
     subprocess.run(cmd, check=True)
@@ -89,23 +91,27 @@ def obliterateIFrames(infile, outfile=None):
             pos += 1
 
     new_data.extend(data[pos:])
-    with open(outfile, "wb") as f:
+    tmp_out = outfile + ".tmp"
+    with open(tmp_out, "wb") as f:
         f.write(new_data)
+    # remux to rebuild the AVI index so players don't show a single frame
+    subprocess.run(["ffmpeg", "-y", "-i", tmp_out, "-c", "copy", outfile], check=True)
+    os.remove(tmp_out)
     print(f"success! keyframes gone (except first one): {outfile}")
     return outfile
 
-
-    # Copy anything left (e.g., index chunk)
-    new_data.extend(data[pos:])
-    with open(outfile, "wb") as f:
-        f.write(new_data)
-    print(f"success! keyframes gone: {outfile}")
-    return outfile
-
-
 def play(outfile):
     print("opening chaos... ")
-    subprocess.Popen(['open', outfile])
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", outfile])
+    elif os.name == "nt":
+        os.startfile(outfile)
+    else:
+        opener = "xdg-open"
+        if shutil.which(opener):
+            subprocess.Popen([opener, outfile])
+        else:
+            print(f"could not find '{opener}', please open {outfile} manually")
 
 if __name__ == "__main__":
     infile = pickFile()
