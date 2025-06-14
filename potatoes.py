@@ -4,14 +4,29 @@ import os
 import struct
 import sys
 import shutil
+import pathlib
 previewDuration = 2500
 
+
+
 def pickFile():
-    inFile = input("enter video file path (mp4/mkv/mov/avi): ").strip()
-    if not os.path.exists(inFile):
-        print("file not found! WHYYYYYYYYYYYY!")
-        exit(1)
+    filepaths = []
+    basedir = "deepFryer"
+    for file in os.listdir(basedir):
+        if file in [".DS_Store"]:
+            DSStore = file
+        else:
+            filepath=f"{basedir}/{file}"
+            if pathlib.Path(filepath).is_file():
+                print("file not found! WHYYYYYYYYYYYY!")
+                filepaths.append(filepath)
+    print(filepath)
+    inFile = filepath
     return inFile
+
+def pickName():
+    outName = input("what do you wanna call the output file?")
+    return f"outputs/{outName}.avi"
 
 def askPreview():
     resp = input("do you want a short preview (y/n)? ").strip().lower()
@@ -19,8 +34,10 @@ def askPreview():
 
 def askDownscale():
     res = input("downscale to resolution (e.g. \n1920x1080(HD), \n1280x720(720p), \n800x600, \n720x576 (v8 style, PAL), \n640x360, \n480x480(square), \n420x420(lol), \n420x69(megalol), \n352x288(broken tv), \n 69x69(lol), \nor 'n' for original): ").strip()
-    if res.lower() in ["", "no", "n"]:
+    if res.lower() in ["no", "n"]:
         return None
+    if res.lower().strip() == "":
+        return "720x576"
     return res
 
 def sliceClip(infile, start=0, duration=previewDuration, outfile="preview_clip.mp4", res=None):
@@ -58,9 +75,8 @@ def removeIFrames(infile):
     print("success! data corrupted :)")
     return outfile
 
-def obliterateIFrames(infile, outfile=None, remove_index=False, fix_index=False):
-    if not outfile or outfile is None:
-        outfile = infile.rsplit('.', 1)[0] + '_flickerglitch.avi'
+def obliterateIFrames(infile, finalOut=None, remove_index=False, fix_index=False):
+    outfile = infile.rsplit('.', 1)[0] + '_flickerglitch.avi'
     print(f"obliterating I-frames (except the first one)... {outfile}")
     with open(infile, "rb") as f:
         data = f.read()
@@ -122,7 +138,8 @@ def obliterateIFrames(infile, outfile=None, remove_index=False, fix_index=False)
         f.write(new_data)
 
     if fix_index:
-        outfile = rebuildIndex(outfile)
+        # sends this files output to the input of rebuildIndex :)
+        outfile = rebuildIndex(outfile, finalOut)
     return outfile
 
 def rebuildIndex(infile, outfile=None):
@@ -150,20 +167,27 @@ def play(outfile):
             print(f"could not find '{opener}', please open {outfile} manually")
 
 if __name__ == "__main__":
-    infile = pickFile()
-    # Preview mode
-    if askPreview():
-        res = askDownscale()
-        preview_clip = sliceClip(infile, start=0, duration=previewDuration, outfile="preview_clip.mp4", res=res)
-        avi_file = convertToAVI(preview_clip, outfile="preview_clip_xvid.avi", res=res)
-        #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
-        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
-        play(flickerglitch_file)
-        print("preview complete! run script again to get full version")
-    else:
-        res = askDownscale()
-        avi_file = convertToAVI(infile, res=res)
-        #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
-        flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
-        play(flickerglitch_file)
-        print("oh ma god what have i done (do it again)")
+    def yaMum():
+        infile = pickFile()
+        outName = pickName()
+        # Preview mode
+        if askPreview():
+            res = askDownscale()
+            preview_clip = sliceClip(infile, start=0, duration=previewDuration, outfile="preview_clip.avi", res=res)
+            avi_file = convertToAVI(preview_clip, outfile="preview_clip_xvid.avi", res=res)
+            #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
+            flickerglitch_file = obliterateIFrames(avi_file, finalOut=outName, remove_index=True, fix_index=True)
+            play(flickerglitch_file)
+            repeat = input("again again?!")
+            if repeat:
+                yaMum()
+            print("preview complete! run script again to get full version")
+        else:
+            res = askDownscale()
+            avi_file = convertToAVI(infile, res=res)
+            #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
+            flickerglitch_file = obliterateIFrames(avi_file, finalOut=outName, remove_index=True, fix_index=True)
+            play(flickerglitch_file)
+            print("oh ma god what have i done (do it again)")
+
+yaMum()
