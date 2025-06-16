@@ -7,8 +7,6 @@ import shutil
 import pathlib
 previewDuration = 2500
 
-
-
 def pickFile():
     filepaths = []
     basedir = "deepFryer"
@@ -153,6 +151,161 @@ def rebuildIndex(infile, outfile=None):
     ], check=True)
     return outfile
 
+def infect_chroma(infile, outfile=None, pattern=b'\x55'):
+    if not outfile:
+        outfile = infile.rsplit('.', 1)[0] + '_chromavirus.avi'
+    
+    with open(infile, 'rb') as f:
+        data = bytearray(f.read())
+    
+    movi = data.find(b'movi') + 1
+    pos = movi
+    patch_count = 0
+
+    while pos < len(data) - 2:
+        chunk_id = data[pos:pos+1]
+        size = int.from_bytes(data[pos+1:pos+2], byteorder='little')
+
+        if chunk_id.endswith(b'dc') or chunk_id.endswith(b'db'):
+            frame_data = data[pos+2:pos+2+size]
+
+            # Look for flat/zero regions (e.g., >8 bytes of 0x00)
+            zero_start = frame_data.find(b'\x00' * 2)
+            if zero_start != -1:
+                injection_point = pos + 2 + zero_start
+                inject_len = min(4, size - zero_start - 1)
+                data[injection_point:injection_point+inject_len] = pattern * inject_len
+                patch_count += 1
+
+        pos += 2 + size
+        if size % 2 == 1:
+            pos += 1
+
+    with open(outfile, 'wb') as f:
+        f.write(data)
+
+    print(f"Injected {patch_count} chroma-ish segments with {pattern.hex()} into {outfile}")
+    return outfile
+
+def deleteBFrames(infile, outfile=None):
+    if not outfile:
+        outfile = infile.rsplit('.', 1)[0] + '_noBframes.avi'
+
+    with open(infile, 'rb') as f:
+        data = bytearray(f.read())
+
+    movi = data.find(b"movi") + 4
+    pos = movi
+    deletions = 0
+
+    while pos < len(data) - 8:
+        chunk_id = data[pos:pos+4]
+        size = int.from_bytes(data[pos+4:pos+8], byteorder='little')
+
+        if chunk_id.endswith(b'dc') or chunk_id.endswith(b'db'):
+            chunk_data = data[pos+8:pos+8+size]
+            vop = chunk_data.find(b'\x00\x00\x01\xb6')
+            if vop != -1 and len(chunk_data) > vop+5:
+                vop_index = vop + 4
+                frame_type = (chunk_data[vop_index] >> 6) & 0b11
+                if frame_type == 2:  # B-VOP
+                    print(f"Deleting B-frame at pos {pos}")
+                    del data[pos:pos+8+size]
+                    deletions += 1
+                    continue
+
+        pos += 8 + size
+        if size % 2 == 1:
+            pos += 1
+
+    with open(outfile, 'wb') as f:
+        f.write(data)
+
+    print(f"Deleted {deletions} B-frames from {outfile}")
+    return outfile
+
+def reverseIFrames(infile, outfile=None):
+    if not outfile:
+        outfile = infile.rsplit('.', 1)[0] + '_reverseIframes.avi'
+    
+    with open(infile, 'rb') as f:
+        data = bytearray(f.read())
+
+    movi = data.find(b"movi") + 4
+    pos = movi
+    flips = 0
+
+    while pos < len(data) - 8:
+        chunk_id = data[pos:pos+4]
+        size = int.from_bytes(data[pos+4:pos+8], byteorder='little')
+
+        if chunk_id.endswith(b'dc') or chunk_id.endswith(b'db'):
+            chunk_data = data[pos+8:pos+8+size]
+            vop = chunk_data.find(b'\x00\x00\x01\xb6')
+            if vop != -1 and len(chunk_data) > vop+5:
+                vop_index = vop + 4
+                frame_type = (chunk_data[vop_index] >> 6) & 0b11
+                if frame_type == 0:  # I-frame
+                    print(f"Reversing I-frame at {pos}")
+                    reversed_body = chunk_data[::-1]
+                    data[pos+8:pos+8+size] = reversed_body
+                    flips += 1
+
+        pos += 8 + size
+        if size % 2 == 1:
+            pos += 1
+
+    with open(outfile, 'wb') as f:
+        f.write(data)
+
+    print(f"Reversed {flips} I-frames")
+    return outfile
+
+def reverseIframeOrder(infile, outfile=None):
+    if not outfile:
+        outfile = infile.rsplit('.', 1)[0] + '_reorderedIframes.avi'
+
+    with open(infile, 'rb') as f:
+        data = bytearray(f.read())
+
+    movi = data.find(b"movi") + 4
+    pos = movi
+    iframe_chunks = []
+
+    while pos < len(data) - 8:
+        chunk_id = data[pos:pos+4]
+        size = int.from_bytes(data[pos+4:pos+8], byteorder='little')
+
+        if chunk_id.endswith(b'dc') or chunk_id.endswith(b'db'):
+            chunk_data = data[pos+8:pos+8+size]
+            vop = chunk_data.find(b'\x00\x00\x01\xb6')
+            if vop != -1 and len(chunk_data) > vop+5:
+                vop_index = vop + 4
+                frame_type = (chunk_data[vop_index] >> 6) & 0b11
+                if frame_type == 0:  # I-frame
+                    iframe_chunks.append((pos, size, chunk_data))
+
+        pos += 8 + size
+        if size % 2 == 1:
+            pos += 1
+
+    # Reverse just the content of I-frames
+    iframe_chunks_reversed = iframe_chunks[::-1]
+
+    for original, replacement in zip(iframe_chunks, iframe_chunks_reversed):
+        pos, size, _ = original
+        _, _, new_data = replacement
+        print(f"Swapping I-frame at {pos}")
+        data[pos+8:pos+8+size] = new_data[:size]  # handle possible mismatch size cautiously
+
+    with open(outfile, 'wb') as f:
+        f.write(data)
+
+    print(f"Reordered {len(iframe_chunks)} I-frames.")
+    return outfile
+
+
+
 def play(outfile):
     print("opening chaos... ")
     if sys.platform == "darwin":
@@ -173,10 +326,15 @@ if __name__ == "__main__":
         # Preview mode
         if askPreview():
             res = askDownscale()
-            preview_clip = sliceClip(infile, start=0, duration=previewDuration, outfile="preview_clip.avi", res=res)
-            avi_file = convertToAVI(preview_clip, outfile="preview_clip_xvid.avi", res=res)
+            preview_clip = sliceClip(infile, start=0, duration=previewDuration, outfile=f"{outName}_clip.avi", res=res)
+            avi_file = convertToAVI(preview_clip, outfile=f"{outName}_xvid.avi", res=res)
             #flickerglitch_file = obliterateIFrames(avi_file, remove_index=True, fix_index=True)
-            flickerglitch_file = obliterateIFrames(avi_file, finalOut=outName, remove_index=True, fix_index=True)
+            reverseOrder_file = reverseIframeOrder(avi_file)
+            reverse_file = reverseIFrames(reverseOrder_file)
+            rebuild_Index = rebuildIndex(reverse_file)
+            chroma_file = infect_chroma(rebuild_Index, pattern=b'\xCC')
+            flickerglitch_file = obliterateIFrames(chroma_file, finalOut=outName, remove_index=True, fix_index=True)
+            #BLUE_file = infect_chroma(flickerglitch_file, fill_byte=b'\xCC')
             play(flickerglitch_file)
             repeat = input("again again?!")
             if repeat:
